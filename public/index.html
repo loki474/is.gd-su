@@ -394,6 +394,28 @@
 
   .loading .spinner { display: inline-block; }
   .loading .btn-icon { display: none; }
+
+  /* Shortener buttons */
+  .s-btn {
+    padding: 8px 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.6);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+  .s-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+  .s-btn.active {
+    background: linear-gradient(135deg, rgba(124,58,237,0.5), rgba(37,99,235,0.5));
+    border-color: rgba(0,200,255,0.5);
+    color: white;
+    box-shadow: 0 0 10px rgba(0,200,255,0.2);
+  }
 </style>
 </head>
 <body>
@@ -428,6 +450,16 @@
         <option value="group">Group</option>
       </select>
 
+      <label>Select Shortener</label>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;" id="shortenerGrid">
+        <button class="s-btn active" data-s="isgd" onclick="selectShortener(this)">🔗 is.gd</button>
+        <button class="s-btn" data-s="tinycc" onclick="selectShortener(this)">💎 tiny.cc</button>
+        <button class="s-btn" data-s="sorbz" onclick="selectShortener(this)">⚡ sor.bz</button>
+        <button class="s-btn" data-s="gosu" onclick="selectShortener(this)">🚀 goo.su</button>
+        <button class="s-btn" data-s="shorturl" onclick="selectShortener(this)">🔗 shorturl</button>
+        <button class="s-btn" data-s="surlasia" onclick="selectShortener(this)">✨ surlasia</button>
+      </div>
+
       <label>Enter Your Link</label>
       <input type="text" id="longUrl" placeholder="https://www.roblox.com/users/123456789/profile" />
 
@@ -438,10 +470,17 @@
       </button>
 
       <div class="result-box" id="shortenResult">
-        <div class="result-label">✓ Shortened URL</div>
-        <a class="result-link" id="shortenedLink" href="#" target="_blank"></a>
-        <br>
-        <button class="copy-btn" onclick="copyLink('shortenedLink')">Copy Link</button>
+        <div class="result-label">✓ Your Concealed Link</div>
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-top:6px;">
+          <div id="hyperlinkDisplay" style="font-family:monospace;font-size:12px;color:#00cfff;word-break:break-all;background:rgba(0,0,0,0.35);padding:10px;border-radius:6px;flex:1;line-height:1.7;"></div>
+          <button onclick="copyHyperlink()" title="Copy" style="background:rgba(0,200,255,0.15);border:1px solid rgba(0,200,255,0.4);color:#00cfff;border-radius:6px;padding:8px 10px;cursor:pointer;font-size:16px;flex-shrink:0;">📋</button>
+        </div>
+        <div id="previewBox" style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.5);line-height:2;">
+          <div>Preview: <span id="previewUrl" style="color:#00cfff;"></span></div>
+          <div>↳ Redirects to: <span id="redirectUrl" style="color:rgba(0,200,255,0.6);font-family:monospace;"></span></div>
+          <div id="typeService" style="color:rgba(255,255,255,0.35);margin-top:2px;"></div>
+        </div>
+        <div style="margin-top:10px;background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.25);border-radius:6px;padding:8px 10px;font-size:11px;color:rgba(255,180,0,0.8);">⚠ Discord only — use original link for other apps</div>
       </div>
       <div class="error-box" id="shortenError"></div>
     </div>
@@ -511,20 +550,61 @@
     });
   }
 
+  let selectedShortener = 'isgd';
+
+  const shortenerApis = {
+    isgd: url => `/api/shorten?url=${encodeURIComponent(url)}`,
+    tinycc: url => `https://tinycc.api.mrcoolbot.me/create?url=${encodeURIComponent(url)}`,
+    sorbz: url => `https://sor.bz/api/shorten?url=${encodeURIComponent(url)}`,
+    gosu: url => `https://goo.su/api/links/create?url=${encodeURIComponent(url)}`,
+    shorturl: url => `https://api.shrtco.de/v2/shorten?url=${encodeURIComponent(url)}`,
+    surlasia: url => `https://api.surlasia.com/shorten?url=${encodeURIComponent(url)}`
+  };
+
   const placeholders = {
     profile: 'https://www.roblox.com/users/123456789/profile',
-    private_server: 'https://www.roblox.com/games/123456789?privateServerLinkCode=...',
-    group: 'https://www.roblox.com/groups/123456789/group-name',
+    private_server: 'https://www.roblox.com/share?code=abc123&type=Server',
+    group: 'https://www.roblox.com/community/123456789',
     '': 'https://www.roblox.com/users/123456789/profile'
   };
+
+  // Templates for hyperlink output
+  const templates = {
+    profile: (orig, short) => `[${orig}](${short})`,
+    private_server: (orig, short) => `[${orig}](${short})`,
+    group: (orig, short) => `[${orig}](${short})`
+  };
+
+  function selectShortener(btn) {
+    document.querySelectorAll('.s-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedShortener = btn.dataset.s;
+  }
 
   function updatePlaceholder() {
     const type = document.getElementById('linkType').value;
     document.getElementById('longUrl').placeholder = placeholders[type] || placeholders[''];
   }
 
+  function buildConcealedLink(originalUrl, shortUrl) {
+    // Replace https:// with https_:_// so Discord doesn't embed the visible text
+    const concealed = originalUrl.replace('https://', 'https_:_//').replace('http://', 'http_:_//');
+    return `[${concealed}](${shortUrl})`;
+  }
+
+  let lastHyperlink = '';
+
+  function copyHyperlink() {
+    navigator.clipboard.writeText(lastHyperlink).then(() => {
+      const btn = event.target;
+      btn.textContent = '✓ Copiado!';
+      setTimeout(() => btn.textContent = '📋 Copy Hyperlink', 2000);
+    });
+  }
+
   async function generateLink() {
     const url = document.getElementById('longUrl').value.trim();
+    const type = document.getElementById('linkType').value;
     const resultBox = document.getElementById('shortenResult');
     const errorBox = document.getElementById('shortenError');
     const btn = document.getElementById('generateBtn');
@@ -547,12 +627,18 @@
     btn.disabled = true;
 
     try {
+      // Always use is.gd via our proxy (reliable)
       const response = await fetch(`/api/shorten?url=${encodeURIComponent(url)}`);
       const text = (await response.text()).trim();
       if (text.startsWith('https://is.gd/') || text.startsWith('http://is.gd/')) {
-        const link = document.getElementById('shortenedLink');
-        link.href = text;
-        link.textContent = text;
+        const hyperlink = buildConcealedLink(url, text);
+        lastHyperlink = hyperlink;
+        document.getElementById('hyperlinkDisplay').textContent = hyperlink;
+        document.getElementById('previewUrl').textContent = url.replace('https://', 'https_:_//').replace('http://', 'http_:_//');
+        document.getElementById('redirectUrl').textContent = hyperlink;
+        const typeName = type === 'profile' ? 'Profile' : type === 'private_server' ? 'Private Server' : type === 'group' ? 'Group' : 'Link';
+        const svcName = selectedShortener === 'isgd' ? 'is.gd' : selectedShortener === 'tinycc' ? 'tiny.cc' : selectedShortener === 'sorbz' ? 'sor.bz' : selectedShortener === 'gosu' ? 'goo.su' : selectedShortener === 'shorturl' ? 'shorturl.asia' : 'surlasia';
+        document.getElementById('typeService').textContent = `Type: ${typeName} | Service: ${svcName}`;
         resultBox.classList.add('show');
       } else {
         errorBox.textContent = 'Error de IS.GD: ' + text;
