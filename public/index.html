@@ -586,9 +586,22 @@
     document.getElementById('longUrl').placeholder = placeholders[type] || placeholders[''];
   }
 
+  function normalizeRobloxUrl(url) {
+    // Extract just the path after /users/, /community/, /share, etc.
+    // and rebuild with the correct roblox.com domain
+    try {
+      const u = new URL(url);
+      const path = u.pathname + u.search + u.hash;
+      return 'https://www.roblox.com' + path;
+    } catch(e) {
+      return url;
+    }
+  }
+
   function buildConcealedLink(originalUrl, shortUrl) {
-    // Replace https:// with https_:_// so Discord doesn't embed the visible text
-    const concealed = originalUrl.replace('https://', 'https_:_//').replace('http://', 'http_:_//');
+    // Always show correct roblox.com domain regardless of what user typed
+    const normalized = normalizeRobloxUrl(originalUrl);
+    const concealed = normalized.replace('https://', 'https_:_//').replace('http://', 'http_:_//');
     return `[${concealed}](${shortUrl})`;
   }
 
@@ -628,13 +641,14 @@
 
     try {
       // Always use is.gd via our proxy (reliable)
-      const response = await fetch(`/api/shorten?url=${encodeURIComponent(url)}`);
+      const response = await fetch(`/api/shorten?url=${encodeURIComponent(url)}&service=${selectedShortener}`);
       const text = (await response.text()).trim();
-      if (text.startsWith('https://is.gd/') || text.startsWith('http://is.gd/')) {
+      if (text.startsWith('https://') || text.startsWith('http://')) {
         const hyperlink = buildConcealedLink(url, text);
         lastHyperlink = hyperlink;
         document.getElementById('hyperlinkDisplay').textContent = hyperlink;
-        document.getElementById('previewUrl').textContent = url.replace('https://', 'https_:_//').replace('http://', 'http_:_//');
+        const normalizedUrl = normalizeRobloxUrl(url);
+        document.getElementById('previewUrl').textContent = normalizedUrl.replace('https://', 'https_:_//').replace('http://', 'http_:_//');
         document.getElementById('redirectUrl').textContent = hyperlink;
         const typeName = type === 'profile' ? 'Profile' : type === 'private_server' ? 'Private Server' : type === 'group' ? 'Group' : 'Link';
         const svcName = selectedShortener === 'isgd' ? 'is.gd' : selectedShortener === 'tinycc' ? 'tiny.cc' : selectedShortener === 'sorbz' ? 'sor.bz' : selectedShortener === 'gosu' ? 'goo.su' : selectedShortener === 'shorturl' ? 'shorturl.asia' : 'surlasia';
