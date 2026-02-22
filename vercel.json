@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/shorten", "destination": "/api/shorten.js" },
+    { "source": "/api/unshorten", "destination": "/api/unshorten.js" },
+    { "source": "/(.*)", "destination": "/public/index.html" }
+  ]
+}
